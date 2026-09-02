@@ -4,7 +4,7 @@ import sys
 
 from lights_bridge.config import load_config
 from lights_bridge.bedtime import calculate_bedtime
-from lights_bridge.controllers import dim_via_shortcut, dim_via_hue, dim_via_homeassistant
+from lights_bridge.controllers import dim_via_shortcut, dim_via_hue, dim_via_homeassistant, dim_via_tuya
 
 
 def _dim(config: dict, brightness: int) -> bool:
@@ -20,6 +20,11 @@ def _dim(config: dict, brightness: int) -> bool:
         return dim_via_homeassistant(
             config["homeassistant_url"], config["homeassistant_token"],
             config["homeassistant_entity"], brightness,
+        )
+    elif method == "tuya":
+        return dim_via_tuya(
+            config["tuya_access_id"], config["tuya_access_secret"],
+            config["tuya_api_endpoint"], config["tuya_device_id"], brightness,
         )
     return False
 

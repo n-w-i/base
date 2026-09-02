@@ -19,6 +19,10 @@ DEFAULTS = {
     "homeassistant_url": "",
     "homeassistant_token": "",
     "homeassistant_entity": "",
+    "tuya_access_id": "",
+    "tuya_access_secret": "",
+    "tuya_api_endpoint": "",
+    "tuya_device_id": "",
 }
 
 

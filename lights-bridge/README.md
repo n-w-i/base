@@ -56,6 +56,43 @@ lights-bridge configure \
   --set homeassistant_entity=light.bedroom
 ```
 
+### Tuya Cloud method
+
+For Tuya/Smart Life devices (e.g. Lepro bulbs) that aren't on HomeKit and don't have
+a Hue Bridge or Home Assistant instance — talks directly to the Tuya Cloud API,
+independent of Google Home/Alexa integrations.
+
+1. Go to [iot.tuya.com](https://iot.tuya.com) and sign up for a free developer account
+2. **Cloud** → **Development** → **Create Cloud Project**. Pick the **Data Center**
+   matching the region your Tuya/Smart Life account was registered in — this
+   determines your `tuya_api_endpoint`:
+
+   | Data Center | API endpoint |
+   |---|---|
+   | China | `https://openapi.tuyacn.com` |
+   | Western America | `https://openapi.tuyaus.com` |
+   | Eastern America | `https://openapi-ueaz.tuyaus.com` |
+   | Central Europe | `https://openapi.tuyaeu.com` |
+   | Western Europe | `https://openapi-weaz.tuyaeu.com` |
+   | India | `https://openapi.tuyain.com` |
+
+3. In the project's **Devices** tab, click **Link Tuya App Account**, scan the QR
+   code with your Tuya/Smart Life app (Me → scan icon) to authorize — your bulb
+   should then appear in the list with its **Device ID**
+4. Copy the **Access ID** and **Access Secret** from the project's **Overview** tab
+
+```bash
+lights-bridge configure \
+  --set method=tuya \
+  --set tuya_access_id=YOUR_ACCESS_ID \
+  --set tuya_access_secret=YOUR_ACCESS_SECRET \
+  --set tuya_api_endpoint=https://openapi.tuyaus.com \
+  --set tuya_device_id=YOUR_DEVICE_ID
+```
+
+Uses the standard instruction set (`switch_led` + `bright_value_v2`, 10-1000
+scale) that most modern Tuya bulbs, including Lepro, support.
+
 ## Usage
 
 ```bash
@@ -96,7 +133,7 @@ Stored at `~/.base/lights.json`. All settings:
 
 | Key | Default | Description |
 |---|---|---|
-| `method` | `shortcut` | `shortcut`, `hue`, or `homeassistant` |
+| `method` | `shortcut` | `shortcut`, `hue`, `homeassistant`, or `tuya` |
 | `wind_down_minutes` | `30` | How long before bedtime to start dimming |
 | `dim_steps` | `6` | Number of dimming steps |
 | `dim_interval_seconds` | `300` | Seconds between each step |

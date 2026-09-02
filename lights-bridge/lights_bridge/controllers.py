@@ -1,6 +1,8 @@
 import subprocess
 import httpx
 
+from lights_bridge.tuya_client import TuyaClient
+
 
 def dim_via_shortcut(shortcut_name: str, brightness: int) -> bool:
     """Trigger an Apple Shortcut to set light brightness. The shortcut should
@@ -30,6 +32,24 @@ def dim_via_hue(bridge_ip: str, username: str, light_ids: list[str], brightness:
                 )
         return True
     except httpx.ConnectError:
+        return False
+
+
+def dim_via_tuya(access_id: str, access_secret: str, api_endpoint: str, device_id: str, brightness: int) -> bool:
+    """Set brightness via the Tuya Cloud API (works for Tuya/Smart Life devices
+    like Lepro bulbs, independent of HomeKit/Google Home). Uses the standard
+    instruction set: switch_led + bright_value_v2 (10-1000 scale)."""
+    try:
+        client = TuyaClient(access_id, access_secret, api_endpoint)
+        if brightness <= 0:
+            return client.send_commands(device_id, [{"code": "switch_led", "value": False}])
+
+        bright_value = int(10 + (brightness / 100) * (1000 - 10))
+        return client.send_commands(device_id, [
+            {"code": "switch_led", "value": True},
+            {"code": "bright_value_v2", "value": bright_value},
+        ])
+    except (httpx.ConnectError, RuntimeError):
         return False
 
 
