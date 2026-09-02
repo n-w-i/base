@@ -7,6 +7,11 @@ build/
 .venv/
 venv/
 
+# Swift
+.build/
+*.xcuserstate
+xcuserdata/
+
 # Credentials (never commit)
 .env
 *.secret
