@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Credentials (never commit)
+.env
+*.secret
+
+# Local data
+*.db
+*.db-wal
+*.db-shm
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
