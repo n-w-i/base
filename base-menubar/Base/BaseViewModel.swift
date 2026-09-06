@@ -89,6 +89,18 @@ struct Prediction: Codable {
     let predicted_recovery: Double?
     let predicted_strain: Double?
     let zone: String?
+    let summary: String?
+    let base_recovery: Double?
+    let recovery_delta: Double?
+    let freshness_adjustment: Double?
+    let sleep_bonus: Double?
+    let fitness: Double?
+    let fatigue: Double?
+    let freshness: Double?
+    let sleep_quality_estimate: Double?
+    let base_strain: Double?
+    let strain_load: Double?
+    let strain_reversion: Double?
     let events_affecting: [EventImpact]?
 }
 

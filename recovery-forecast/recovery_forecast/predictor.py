@@ -120,6 +120,49 @@ def _trend(values: list) -> str:
     return "stable"
 
 
+def _summarize_day(
+    recovery_delta: float,
+    freshness_adjustment: float,
+    sleep_bonus: float,
+    events_affecting: list[dict],
+    predicted_strain: float,
+    strain_load: float,
+    base_strain: float,
+) -> str:
+    """One plain-English sentence per side of the forecast (recovery, strain),
+    naming whichever factor moved the number the most."""
+    drivers = [("calendar", recovery_delta), ("freshness", freshness_adjustment), ("sleep", sleep_bonus)]
+    name, value = max(drivers, key=lambda d: abs(d[1]))
+
+    if abs(value) < 2:
+        recovery_note = "Recovery looks like a normal day for you."
+    elif name == "calendar":
+        title = events_affecting[0]["title"] if events_affecting else "today's plans"
+        direction = "down" if value < 0 else "up"
+        recovery_note = f"{title} is the main thing pulling recovery {direction} today."
+    elif name == "freshness":
+        recovery_note = (
+            "Lingering fatigue from recent training is dragging recovery down."
+            if value < 0 else
+            "You're fresh off recent training, giving recovery a boost."
+        )
+    else:
+        recovery_note = (
+            "Calendar suggests rougher sleep tonight, denting recovery."
+            if value < 0 else
+            "Nothing on the calendar should disrupt sleep tonight."
+        )
+
+    if strain_load >= 3:
+        strain_note = "Plenty of planned activity will add real strain today."
+    elif predicted_strain < base_strain - 1:
+        strain_note = "Should be a lighter strain day than usual."
+    else:
+        strain_note = "Strain should land close to what's typical for you lately."
+
+    return f"{recovery_note} {strain_note}"
+
+
 def _estimate_sleep_quality(day_events: list[dict]) -> float:
     penalty = 0
     for e in day_events:
@@ -187,7 +230,9 @@ def _predict_day(
     # The "reversion" target is now fatigue (a recency-weighted recent-strain
     # average) instead of a flat historical average, so quiet days settle back
     # toward what's actually typical for you lately, not a stale long-run mean.
-    predicted_strain = current_strain + (strain_delta / 5) + (fatigue - current_strain) * 0.3
+    strain_load = strain_delta / 5
+    strain_reversion = (fatigue - current_strain) * 0.3
+    predicted_strain = current_strain + strain_load + strain_reversion
     predicted_strain = max(0, min(21, predicted_strain))
 
     # Roll fitness/fatigue forward by feeding in this day's predicted strain,
@@ -195,18 +240,33 @@ def _predict_day(
     next_fitness = fitness + (predicted_strain - fitness) / FITNESS_DAYS
     next_fatigue = fatigue + (predicted_strain - fatigue) / FATIGUE_DAYS
 
+    summary = _summarize_day(
+        recovery_delta, freshness_adjustment, sleep_bonus,
+        events_affecting, predicted_strain, strain_load, current_strain,
+    )
+
     return {
         "predicted_recovery": round(predicted, 1),
         "zone": zone,
+        "summary": summary,
+        # The full recovery equation: base_recovery + recovery_delta +
+        # freshness_adjustment + sleep_bonus (then clamped to 1-100) = predicted_recovery.
+        "base_recovery": round(current_recovery, 1),
         "recovery_delta": round(recovery_delta, 1),
+        "freshness_adjustment": round(freshness_adjustment, 1),
+        "sleep_bonus": round(sleep_bonus, 1),
         # fitness/fatigue/freshness all describe the state going into this day
         # (before today's own training), so freshness == fitness - fatigue here.
         "fitness": round(fitness, 1),
         "fatigue": round(fatigue, 1),
         "freshness": round(freshness, 1),
         "sleep_quality_estimate": round(sleep_quality, 1),
+        # The full strain equation: base_strain + strain_load + strain_reversion
+        # (then clamped to 0-21) = predicted_strain.
         "predicted_strain": round(predicted_strain, 1),
-        "strain_delta": round(strain_delta / 5, 1),
+        "base_strain": round(current_strain, 1),
+        "strain_load": round(strain_load, 1),
+        "strain_reversion": round(strain_reversion, 1),
         # Rolled-forward state for chaining into the next day's prediction —
         # not the same as fitness/fatigue above, which describe *this* day.
         "_next_fitness": next_fitness,
@@ -290,16 +350,26 @@ def format_prediction(result: dict) -> str:
         lines.append(f"\n{p['day']} ({p['date']})")
         lines.append(f"  {zone_icon} Predicted recovery: {p['predicted_recovery']}% ({p['zone']})")
         lines.append(f"  🔥 Predicted strain: {p['predicted_strain']} / 21")
+        lines.append(f"  {p['summary']}")
 
         if p["events_affecting"]:
             for e in p["events_affecting"]:
                 sign = "+" if e["impact"] >= 0 else ""
                 lines.append(f"    {e['title']} ({e['category'].replace('_', ' ')}) → {sign}{e['impact']} recovery")
 
-        if p["recovery_delta"] != 0:
-            lines.append(f"  Calendar impact: {p['recovery_delta']:+.0f}")
         lines.append(f"  Freshness: {p['freshness']:+.1f} (fitness {p['fitness']} − fatigue {p['fatigue']})")
         lines.append(f"  Estimated sleep quality: {p['sleep_quality_estimate']:.0f}%")
+        lines.append(
+            f"  Recovery math: {p['base_recovery']} (base) "
+            f"{p['recovery_delta']:+.0f} (calendar) "
+            f"{p['freshness_adjustment']:+.1f} (freshness) "
+            f"{p['sleep_bonus']:+.1f} (sleep) = {p['predicted_recovery']}%"
+        )
+        lines.append(
+            f"  Strain math: {p['base_strain']} (base) "
+            f"{p['strain_load']:+.1f} (planned activity) "
+            f"{p['strain_reversion']:+.1f} (reverts toward fatigue) = {p['predicted_strain']}"
+        )
 
     # Overall advice
     lines.append("\n" + "=" * 40)

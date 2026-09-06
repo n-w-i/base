@@ -151,36 +151,83 @@ struct MenuBarView: View {
     @ViewBuilder
     func forecastSection(_ predictions: [Prediction]) -> some View {
         Divider()
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Forecast")
                 .font(.subheadline.bold())
-            ForEach(Array(predictions.enumerated()), id: \.offset) { _, p in
-                HStack {
-                    Circle()
-                        .fill(zoneColor(p.zone ?? "unknown"))
-                        .frame(width: 8, height: 8)
-                    Text(p.day ?? "")
-                        .font(.caption)
-                    Spacer()
-                    Text("\(Int(p.predicted_recovery ?? 0))%")
-                        .font(.caption.bold())
-                        .foregroundColor(zoneColor(p.zone ?? "unknown"))
-
-                    if let strain = p.predicted_strain {
-                        Text(String(format: "· %.1f strain", strain))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-
-                    if let events = p.events_affecting, !events.isEmpty {
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text(events.map { $0.title ?? "" }.joined(separator: ", "))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
+            ForEach(Array(predictions.enumerated()), id: \.offset) { index, p in
+                forecastDay(p)
+                if index < predictions.count - 1 {
+                    Divider()
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    func forecastDay(_ p: Prediction) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Circle()
+                    .fill(zoneColor(p.zone ?? "unknown"))
+                    .frame(width: 8, height: 8)
+                Text(p.day ?? "")
+                    .font(.caption.bold())
+                Spacer()
+                Text("\(Int(p.predicted_recovery ?? 0))%")
+                    .font(.caption.bold())
+                    .foregroundColor(zoneColor(p.zone ?? "unknown"))
+                if let strain = p.predicted_strain {
+                    Text(String(format: "%.1f strain", strain))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if let summary = p.summary {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+            }
+
+            if let freshness = p.freshness {
+                let state = freshness >= 0 ? "fresh" : "fatigued"
+                Text(String(format: "Freshness %+.1f (%@) — fitness %.1f, fatigue %.1f", freshness, state, p.fitness ?? 0, p.fatigue ?? 0))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let events = p.events_affecting, !events.isEmpty {
+                ForEach(Array(events.enumerated()), id: \.offset) { _, e in
+                    let sign = (e.impact ?? 0) >= 0 ? "+" : ""
+                    Text("\(e.title ?? "") — \(sign)\(Int(e.impact ?? 0)) recovery")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            } else if let delta = p.recovery_delta, delta != 0 {
+                Text(String(format: "Calendar impact: %+.0f", delta))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let sleepQuality = p.sleep_quality_estimate {
+                Text(String(format: "Estimated sleep quality: %.0f%%", sleepQuality))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let base = p.base_recovery, let delta = p.recovery_delta,
+               let fresh = p.freshness_adjustment, let sleep = p.sleep_bonus,
+               let result = p.predicted_recovery {
+                Text(String(format: "Recovery: %.0f base %+.0f cal %+.1f fresh %+.1f sleep = %.0f%%", base, delta, fresh, sleep, result))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if let base = p.base_strain, let load = p.strain_load,
+               let rev = p.strain_reversion, let result = p.predicted_strain {
+                Text(String(format: "Strain: %.1f base %+.1f planned %+.1f revert = %.1f", base, load, rev, result))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
     }
