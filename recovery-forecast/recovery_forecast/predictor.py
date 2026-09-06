@@ -2,6 +2,19 @@ import httpx
 
 from recovery_forecast.config import WHOOP_CORE_URL, CALENDAR_INTEL_URL
 
+# Fitness/fatigue time constants, in days. This is the classic Banister
+# impulse-response model (aka TrainingPeaks' CTL/ATL/TSB): "fitness" is a
+# slow-moving rolling average of daily strain, "fatigue" a fast-moving one,
+# and "freshness" (fitness minus fatigue) is how primed-vs-worn-down you are.
+# See recovery-forecast/README.md for the plain-language version.
+FITNESS_DAYS = 42
+FATIGUE_DAYS = 7
+
+# How much one freshness point (roughly a strain point's worth of build-up)
+# nudges predicted recovery. This is a hand-picked weight, not a fit
+# coefficient — nobody's validated the "right" size of this effect for you.
+FRESHNESS_WEIGHT = 2.0
+
 STRAIN_IMPACT = {
     "high": -18,
     "moderate": -8,
@@ -22,13 +35,15 @@ RECOVERY_IMPACT = {
 }
 
 
-def _fetch_whoop_data(days: int = 14) -> dict:
+def _fetch_whoop_data(days: int = 14, cycle_days: int = 45) -> dict:
+    # Fitness (42-day) needs a longer history than the 14-day window used
+    # for the recovery baseline, so cycles are fetched separately and wider.
     try:
         with httpx.Client(base_url=WHOOP_CORE_URL, timeout=10) as client:
             today = client.get("/today").json()
             recoveries = client.get(f"/recoveries?days={days}").json()
             sleeps = client.get(f"/sleeps?days={days}").json()
-            cycles = client.get(f"/cycles?days={days}").json()
+            cycles = client.get(f"/cycles?days={cycle_days}").json()
         return {"today": today, "recoveries": recoveries, "sleeps": sleeps, "cycles": cycles}
     except httpx.ConnectError:
         return {}
@@ -73,6 +88,25 @@ def _compute_baseline(recoveries: list[dict], cycles: list[dict]) -> dict:
     }
 
 
+def _compute_training_load(cycles: list[dict]) -> dict:
+    """Fitness (slow-decay) and fatigue (fast-decay) rolling averages of daily
+    strain — see FITNESS_DAYS/FATIGUE_DAYS above. whoop-core returns cycles
+    newest-first, so they're reversed to walk oldest-to-newest, the direction
+    the rolling average actually decays in."""
+    ordered = list(reversed(cycles))
+    strains = [c["score"]["strain"] for c in ordered if c.get("score", {}).get("strain") is not None]
+
+    if not strains:
+        return {"fitness": 0.0, "fatigue": 0.0}
+
+    fitness = fatigue = strains[0]
+    for s in strains[1:]:
+        fitness += (s - fitness) / FITNESS_DAYS
+        fatigue += (s - fatigue) / FATIGUE_DAYS
+
+    return {"fitness": fitness, "fatigue": fatigue}
+
+
 def _trend(values: list) -> str:
     if len(values) < 3:
         return "insufficient data"
@@ -99,7 +133,14 @@ def _estimate_sleep_quality(day_events: list[dict]) -> float:
     return max(0, 100 - penalty)
 
 
-def _predict_day(current_recovery: float, current_strain: float, day_calendar: dict | None, baseline: dict) -> dict:
+def _predict_day(
+    current_recovery: float,
+    current_strain: float,
+    fitness: float,
+    fatigue: float,
+    day_calendar: dict | None,
+    baseline: dict,
+) -> dict:
     strain_delta = 0
     recovery_delta = 0
     events_affecting = []
@@ -120,8 +161,13 @@ def _predict_day(current_recovery: float, current_strain: float, day_calendar: d
                     "impact": ri,
                 })
 
-    mean_reversion = (baseline["avg_recovery"] - current_recovery) * 0.3
-    predicted = current_recovery + recovery_delta + mean_reversion
+    # Freshness = fitness minus fatigue, computed from the state going into
+    # this day (i.e. before today's own training is added to the buckets
+    # below) — this is how fresh/worn-down you wake up feeling.
+    freshness = fitness - fatigue
+    freshness_adjustment = freshness * FRESHNESS_WEIGHT
+
+    predicted = current_recovery + recovery_delta + freshness_adjustment
 
     sleep_quality = _estimate_sleep_quality(day_calendar.get("events", []) if day_calendar else [])
     sleep_bonus = (sleep_quality - 70) * 0.3
@@ -138,18 +184,33 @@ def _predict_day(current_recovery: float, current_strain: float, day_calendar: d
 
     # strain_delta's magnitude is on the same 0..18 scale as STRAIN_IMPACT, so it's
     # rescaled onto WHOOP's 0-21 strain range (roughly /5) before being applied.
-    strain_mean_reversion = (baseline["avg_strain"] - current_strain) * 0.3
-    predicted_strain = current_strain + (strain_delta / 5) + strain_mean_reversion
+    # The "reversion" target is now fatigue (a recency-weighted recent-strain
+    # average) instead of a flat historical average, so quiet days settle back
+    # toward what's actually typical for you lately, not a stale long-run mean.
+    predicted_strain = current_strain + (strain_delta / 5) + (fatigue - current_strain) * 0.3
     predicted_strain = max(0, min(21, predicted_strain))
+
+    # Roll fitness/fatigue forward by feeding in this day's predicted strain,
+    # so the next day's freshness reflects today's planned training too.
+    next_fitness = fitness + (predicted_strain - fitness) / FITNESS_DAYS
+    next_fatigue = fatigue + (predicted_strain - fatigue) / FATIGUE_DAYS
 
     return {
         "predicted_recovery": round(predicted, 1),
         "zone": zone,
         "recovery_delta": round(recovery_delta, 1),
-        "mean_reversion": round(mean_reversion, 1),
+        # fitness/fatigue/freshness all describe the state going into this day
+        # (before today's own training), so freshness == fitness - fatigue here.
+        "fitness": round(fitness, 1),
+        "fatigue": round(fatigue, 1),
+        "freshness": round(freshness, 1),
         "sleep_quality_estimate": round(sleep_quality, 1),
         "predicted_strain": round(predicted_strain, 1),
         "strain_delta": round(strain_delta / 5, 1),
+        # Rolled-forward state for chaining into the next day's prediction —
+        # not the same as fitness/fatigue above, which describe *this* day.
+        "_next_fitness": next_fitness,
+        "_next_fatigue": next_fatigue,
         "events_affecting": events_affecting,
     }
 
@@ -164,6 +225,7 @@ def build_prediction(forecast_days: int = 3) -> dict:
     recoveries = whoop.get("recoveries", [])
     cycles = whoop.get("cycles", [])
     baseline = _compute_baseline(recoveries, cycles)
+    load = _compute_training_load(cycles)
 
     today_recovery = baseline["recent_recovery"]
     if today_recovery is None:
@@ -174,15 +236,19 @@ def build_prediction(forecast_days: int = 3) -> dict:
     predictions = []
     running_recovery = today_recovery
     running_strain = today_strain
+    running_fitness = load["fitness"]
+    running_fatigue = load["fatigue"]
 
     for i in range(forecast_days):
         cal_day = calendar[i] if i < len(calendar) else None
-        pred = _predict_day(running_recovery, running_strain, cal_day, baseline)
+        pred = _predict_day(running_recovery, running_strain, running_fitness, running_fatigue, cal_day, baseline)
         pred["day"] = cal_day["day_name"] if cal_day else f"Day +{i+1}"
         pred["date"] = cal_day["date"] if cal_day else ""
-        predictions.append(pred)
         running_recovery = pred["predicted_recovery"]
         running_strain = pred["predicted_strain"]
+        running_fitness = pred.pop("_next_fitness")
+        running_fatigue = pred.pop("_next_fatigue")
+        predictions.append(pred)
 
     return {
         "current": {
@@ -192,6 +258,9 @@ def build_prediction(forecast_days: int = 3) -> dict:
             "avg_recovery_14d": round(baseline["avg_recovery"], 1),
             "avg_strain_14d": round(baseline["avg_strain"], 1),
             "trend": baseline["recovery_trend"],
+            "fitness": round(load["fitness"], 1),
+            "fatigue": round(load["fatigue"], 1),
+            "freshness": round(load["fitness"] - load["fatigue"], 1),
         },
         "predictions": predictions,
         "calendar_connected": len(calendar) > 0,
@@ -209,6 +278,9 @@ def format_prediction(result: dict) -> str:
         lines.append(f"Current HRV: {c['hrv']:.1f}ms")
     if c.get("strain") is not None:
         lines.append(f"Current strain: {c['strain']:.1f} (14-day avg: {c['avg_strain_14d']})")
+    if c.get("fitness") is not None:
+        sign = "fresh" if c["freshness"] >= 0 else "fatigued"
+        lines.append(f"Fitness: {c['fitness']} | Fatigue: {c['fatigue']} | Freshness: {c['freshness']:+.1f} ({sign})")
 
     lines.append(f"\nForecast ({'with' if result['calendar_connected'] else 'without'} calendar data):")
     lines.append("=" * 40)
@@ -226,7 +298,7 @@ def format_prediction(result: dict) -> str:
 
         if p["recovery_delta"] != 0:
             lines.append(f"  Calendar impact: {p['recovery_delta']:+.0f}")
-        lines.append(f"  Mean reversion: {p['mean_reversion']:+.1f}")
+        lines.append(f"  Freshness: {p['freshness']:+.1f} (fitness {p['fitness']} − fatigue {p['fatigue']})")
         lines.append(f"  Estimated sleep quality: {p['sleep_quality_estimate']:.0f}%")
 
     # Overall advice

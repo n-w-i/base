@@ -11,6 +11,10 @@ Base reads your WHOOP recovery/strain/sleep data alongside your Google Calendar 
 - **"You need to be asleep by 10:15pm to hit your sleep need before tomorrow's 7am meeting"**
 - Dims your smart lights when it's time to wind down
 
+## Where the numbers come from
+
+Your current recovery, strain, HRV, and sleep are real — straight from WHOOP's own sensors, unmodified. Everything about *future* days is a guess Base makes, not WHOOP (WHOOP itself never forecasts, only reports on today and the past). That guess is built from your real training history plus your calendar, using ideas borrowed from sports science (a "fitness vs. fatigue" model used by tools like TrainingPeaks) — not machine learning, and not validated against your actual outcomes. Full plain-language breakdown of exactly how it's calculated: [recovery-forecast/README.md](./recovery-forecast/).
+
 ## Modules
 
 Each module runs independently or together:
