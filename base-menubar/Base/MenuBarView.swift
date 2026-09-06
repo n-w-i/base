@@ -166,6 +166,12 @@ struct MenuBarView: View {
                         .font(.caption.bold())
                         .foregroundColor(zoneColor(p.zone ?? "unknown"))
 
+                    if let strain = p.predicted_strain {
+                        Text(String(format: "· %.1f strain", strain))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
                     if let events = p.events_affecting, !events.isEmpty {
                         Text("·")
                             .foregroundColor(.secondary)

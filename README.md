@@ -21,19 +21,32 @@ Each module runs independently or together:
 | [calendar-intel](./calendar-intel/) | Reads Google Calendar, classifies events, forecasts | ✅ Built |
 | [recovery-forecast](./recovery-forecast/) | Multi-day recovery prediction model | ✅ Built |
 | [base-menubar](./base-menubar/) | macOS menu bar widget (Swift) | ✅ Built |
+| [alerts](./alerts/) | Proactive macOS notifications (recovery, risky days, bedtime) | ✅ Built |
 | [lights-bridge](./lights-bridge/) | Smart light dimming at wind-down time | ✅ Built |
 
 ## Quick start
 
-```bash
-# 1. Set up whoop-core (see whoop-core/README.md for full guide)
-cd whoop-core
-pip install -e .
-whoop-core auth
-whoop-core serve
+Base is designed to be self-hosted — every install is independent, runs entirely on your own machine, and uses your own credentials. There's no shared server; if a friend also wears WHOOP, they run their own copy the same way.
 
-# 2. Other modules connect to http://localhost:9120
+```bash
+# 1. Install every module (creates a venv per module, builds base-menubar)
+./setup.sh
+
+# 2. Get your own credentials (one-time, per person):
+#    - WHOOP developer app → whoop-core/README.md "Setup"
+#    - Google Calendar OAuth → calendar-intel/README.md "Setup"
+
+# 3. Authenticate (opens a browser for each)
+cd whoop-core     && .venv/bin/whoop-core auth      && cd ..
+cd calendar-intel && .venv/bin/calendar-intel auth  && cd ..
+
+# 4. Start everything and make it survive reboot/logout
+./scripts/install-launchd.sh
 ```
+
+That covers whoop-core, calendar-intel, recovery-forecast, alerts, and base-menubar. `lights-bridge` is left out of auto-start deliberately — it needs a light-control method (Shortcuts/Hue/Home Assistant/Tuya) configured first; see [lights-bridge/README.md](./lights-bridge/).
+
+Check on things any time with `launchctl list | grep com.base`; logs land in `~/.base/logs/`.
 
 ## Architecture
 
@@ -58,7 +71,7 @@ whoop-core serve
          ┌───────────┼───────────┐
          ▼           ▼           ▼
 ┌──────────────┐ ┌────────┐ ┌──────────────┐
-│ base-menubar│ │ alerts │ │ lights-bridge│
+│ base-menubar │ │ alerts │ │ lights-bridge│
 └──────────────┘ └────────┘ └──────────────┘
 ```
 

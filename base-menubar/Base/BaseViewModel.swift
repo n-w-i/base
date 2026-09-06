@@ -87,6 +87,7 @@ struct Prediction: Codable {
     let day: String?
     let date: String?
     let predicted_recovery: Double?
+    let predicted_strain: Double?
     let zone: String?
     let events_affecting: [EventImpact]?
 }
@@ -143,7 +144,7 @@ class BaseViewModel: ObservableObject {
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
         }
     }
