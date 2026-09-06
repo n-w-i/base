@@ -1,3 +1,5 @@
+import re
+
 import httpx
 
 from recovery_forecast.config import WHOOP_CORE_URL, CALENDAR_INTEL_URL, HEVY_INTEL_URL
@@ -42,13 +44,26 @@ MUSCLE_GROUP_HINTS = {
     "leg day": ["quadriceps", "hamstrings", "glutes", "calves"],
     "squat": ["quadriceps", "glutes"],
     "deadlift": ["hamstrings", "glutes", "lower_back"],
+    "quad": ["quadriceps"],
+    "hamstring": ["hamstrings"],
+    "glute": ["glutes"],
+    "calf": ["calves"],
+    "calves": ["calves"],
     "upper body": ["chest", "shoulders", "triceps", "lats", "upper_back"],
     "push day": ["chest", "shoulders", "triceps"],
     "pull day": ["lats", "upper_back", "biceps"],
     "arm day": ["biceps", "triceps"],
+    "bicep": ["biceps"],
+    "tricep": ["triceps"],
     "chest day": ["chest"],
+    "bench": ["chest", "triceps", "shoulders"],
     "back day": ["lats", "upper_back"],
+    "lat pulldown": ["lats"],
     "shoulder day": ["shoulders"],
+    "shoulder": ["shoulders"],
+    "core": ["abdominals"],
+    "abs": ["abdominals"],
+    "full body": ["full_body"],
 }
 
 
@@ -157,7 +172,11 @@ def _muscle_note(events_affecting: list[dict], muscle_fatigue: dict) -> str | No
     for event in events_affecting:
         title_lower = event["title"].lower()
         for hint, muscles in MUSCLE_GROUP_HINTS.items():
-            if hint not in title_lower:
+            # Word-boundary match, not a plain substring check — otherwise a
+            # short hint like "row" would false-positive inside "arrow" or
+            # "tomorrow" (classifier.py's own keyword matching has the same
+            # safeguard).
+            if not re.search(r'\b' + re.escape(hint) + r'\b', title_lower):
                 continue
             for muscle in muscles:
                 info = muscle_fatigue.get(muscle)
