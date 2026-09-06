@@ -110,16 +110,37 @@ struct EventImpact: Codable {
     let impact: Double?
 }
 
+struct HevyWorkout: Codable {
+    let id: String?
+    let title: String?
+    let start_time: String?
+    let exercises: [HevyExercise]?
+}
+
+struct HevyExercise: Codable {
+    let title: String?
+    let sets: [HevySet]?
+}
+
+struct HevySet: Codable {
+    let type: String?
+    let weight_kg: Double?
+    let reps: Double?
+    let rpe: Double?
+}
+
 @MainActor
 class BaseViewModel: ObservableObject {
     @Published var today: WhoopToday?
     @Published var forecast: ForecastResult?
+    @Published var hevyToday: HevyWorkout?
     @Published var lastUpdated: Date?
     @Published var error: String?
 
     private var timer: Timer?
     private let whoopCoreURL = "http://localhost:9120"
     private let forecastURL = "http://localhost:9122"
+    private let hevyIntelURL = "http://localhost:9123"
 
     var recoveryScore: Double? { today?.recovery?.score?.recovery_score }
     var zone: String {
@@ -165,6 +186,7 @@ class BaseViewModel: ObservableObject {
         Task {
             await fetchToday()
             await fetchForecast()
+            await fetchHevyToday()
             lastUpdated = Date()
         }
     }
@@ -187,6 +209,18 @@ class BaseViewModel: ObservableObject {
             forecast = try JSONDecoder().decode(ForecastResult.self, from: data)
         } catch {
             // forecast is optional
+        }
+    }
+
+    private func fetchHevyToday() async {
+        guard let url = URL(string: "\(hevyIntelURL)/today") else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let workout = try JSONDecoder().decode(HevyWorkout.self, from: data)
+            hevyToday = workout.id != nil ? workout : nil
+        } catch {
+            // hevy-intel is optional
+            hevyToday = nil
         }
     }
 

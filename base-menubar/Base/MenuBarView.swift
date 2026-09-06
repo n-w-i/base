@@ -43,6 +43,11 @@ struct MenuBarView: View {
                 workoutsSection(workouts)
             }
 
+            // Strength (Hevy exercise breakdown, if a recent workout was logged)
+            if let hevy = viewModel.hevyToday, let exercises = hevy.exercises, !exercises.isEmpty {
+                strengthSection(hevy, exercises)
+            }
+
             // Forecast
             if let predictions = viewModel.forecast?.predictions, !predictions.isEmpty {
                 forecastSection(predictions)
@@ -146,6 +151,38 @@ struct MenuBarView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    func strengthSection(_ workout: HevyWorkout, _ exercises: [HevyExercise]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(workout.title ?? "Strength")
+                .font(.subheadline.bold())
+            ForEach(Array(exercises.enumerated()), id: \.offset) { _, exercise in
+                HStack {
+                    Text(exercise.title ?? "Exercise")
+                        .font(.caption)
+                    Spacer()
+                    Text(workingSetSummary(exercise.sets ?? []))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    func workingSetSummary(_ sets: [HevySet]) -> String {
+        let working = sets.filter { $0.type != "warmup" }
+        guard !working.isEmpty else { return "0 sets" }
+        var summary = "\(working.count) sets"
+        if let top = working.max(by: { ($0.weight_kg ?? 0) < ($1.weight_kg ?? 0) }) {
+            var bits: [String] = []
+            if let w = top.weight_kg { bits.append(String(format: "top %.0fkg", w)) }
+            if let r = top.reps { bits.append("x\(Int(r))") }
+            if let rpe = top.rpe { bits.append(String(format: "@RPE %.1f", rpe)) }
+            if !bits.isEmpty { summary += ", " + bits.joined(separator: " ") }
+        }
+        return summary
     }
 
     @ViewBuilder

@@ -1,6 +1,6 @@
 import httpx
 
-from recovery_forecast.config import WHOOP_CORE_URL, CALENDAR_INTEL_URL
+from recovery_forecast.config import WHOOP_CORE_URL, CALENDAR_INTEL_URL, HEVY_INTEL_URL
 
 # Fitness/fatigue time constants, in days. This is the classic Banister
 # impulse-response model (aka TrainingPeaks' CTL/ATL/TSB): "fitness" is a
@@ -34,6 +34,23 @@ RECOVERY_IMPACT = {
     "unknown": -3,
 }
 
+# calendar-intel only knows a workout is planned from the event title's
+# keywords — it has no idea which muscles were *actually* trained recently.
+# This maps the same style of title keyword to the muscle groups hevy-intel
+# tracks, so a planned "leg day" can be checked against real leg fatigue.
+MUSCLE_GROUP_HINTS = {
+    "leg day": ["quadriceps", "hamstrings", "glutes", "calves"],
+    "squat": ["quadriceps", "glutes"],
+    "deadlift": ["hamstrings", "glutes", "lower_back"],
+    "upper body": ["chest", "shoulders", "triceps", "lats", "upper_back"],
+    "push day": ["chest", "shoulders", "triceps"],
+    "pull day": ["lats", "upper_back", "biceps"],
+    "arm day": ["biceps", "triceps"],
+    "chest day": ["chest"],
+    "back day": ["lats", "upper_back"],
+    "shoulder day": ["shoulders"],
+}
+
 
 def _fetch_whoop_data(days: int = 14, cycle_days: int = 45) -> dict:
     # Fitness (42-day) needs a longer history than the 14-day window used
@@ -55,6 +72,14 @@ def _fetch_calendar(days: int = 3) -> list[dict]:
             return client.get(f"/forecast?days={days}").json()
     except httpx.ConnectError:
         return []
+
+
+def _fetch_muscle_fatigue() -> dict:
+    try:
+        with httpx.Client(base_url=HEVY_INTEL_URL, timeout=10) as client:
+            return client.get("/muscle-fatigue").json()
+    except httpx.ConnectError:
+        return {}
 
 
 def _compute_baseline(recoveries: list[dict], cycles: list[dict]) -> dict:
@@ -120,6 +145,35 @@ def _trend(values: list) -> str:
     return "stable"
 
 
+def _muscle_note(events_affecting: list[dict], muscle_fatigue: dict) -> str | None:
+    """Cross-references a calendar-guessed workout title (e.g. "leg day")
+    against real per-muscle-group fatigue from hevy-intel. Returns the
+    single most-fatigued matching muscle's warning, or None if there's no
+    match or no hevy-intel data."""
+    if not muscle_fatigue:
+        return None
+
+    worst = None
+    for event in events_affecting:
+        title_lower = event["title"].lower()
+        for hint, muscles in MUSCLE_GROUP_HINTS.items():
+            if hint not in title_lower:
+                continue
+            for muscle in muscles:
+                info = muscle_fatigue.get(muscle)
+                if info and info["state"] in ("fatigued", "recovering"):
+                    if worst is None or info["fatigue_score"] > worst[1]["fatigue_score"]:
+                        worst = (muscle, info)
+
+    if worst is None:
+        return None
+    muscle, info = worst
+    return (
+        f"Real training data: {muscle.replace('_', ' ')} is still {info['state']} "
+        f"({info['days_since_trained']}d since last trained) — consider easing off."
+    )
+
+
 def _summarize_day(
     recovery_delta: float,
     freshness_adjustment: float,
@@ -128,6 +182,7 @@ def _summarize_day(
     predicted_strain: float,
     strain_load: float,
     base_strain: float,
+    muscle_fatigue: dict,
 ) -> str:
     """One plain-English sentence per side of the forecast (recovery, strain),
     naming whichever factor moved the number the most."""
@@ -160,7 +215,11 @@ def _summarize_day(
     else:
         strain_note = "Strain should land close to what's typical for you lately."
 
-    return f"{recovery_note} {strain_note}"
+    summary = f"{recovery_note} {strain_note}"
+    muscle_note = _muscle_note(events_affecting, muscle_fatigue)
+    if muscle_note:
+        summary += f" {muscle_note}"
+    return summary
 
 
 def _estimate_sleep_quality(day_events: list[dict]) -> float:
@@ -183,6 +242,7 @@ def _predict_day(
     fatigue: float,
     day_calendar: dict | None,
     baseline: dict,
+    muscle_fatigue: dict,
 ) -> dict:
     strain_delta = 0
     recovery_delta = 0
@@ -243,6 +303,7 @@ def _predict_day(
     summary = _summarize_day(
         recovery_delta, freshness_adjustment, sleep_bonus,
         events_affecting, predicted_strain, strain_load, current_strain,
+        muscle_fatigue,
     )
 
     return {
@@ -278,6 +339,7 @@ def _predict_day(
 def build_prediction(forecast_days: int = 3) -> dict:
     whoop = _fetch_whoop_data()
     calendar = _fetch_calendar(forecast_days)
+    muscle_fatigue = _fetch_muscle_fatigue()
 
     if not whoop:
         return {"error": "Could not connect to whoop-core. Is it running on :9120?"}
@@ -301,7 +363,10 @@ def build_prediction(forecast_days: int = 3) -> dict:
 
     for i in range(forecast_days):
         cal_day = calendar[i] if i < len(calendar) else None
-        pred = _predict_day(running_recovery, running_strain, running_fitness, running_fatigue, cal_day, baseline)
+        pred = _predict_day(
+            running_recovery, running_strain, running_fitness, running_fatigue,
+            cal_day, baseline, muscle_fatigue,
+        )
         pred["day"] = cal_day["day_name"] if cal_day else f"Day +{i+1}"
         pred["date"] = cal_day["date"] if cal_day else ""
         running_recovery = pred["predicted_recovery"]
@@ -321,9 +386,11 @@ def build_prediction(forecast_days: int = 3) -> dict:
             "fitness": round(load["fitness"], 1),
             "fatigue": round(load["fatigue"], 1),
             "freshness": round(load["fitness"] - load["fatigue"], 1),
+            "muscle_fatigue": muscle_fatigue,
         },
         "predictions": predictions,
         "calendar_connected": len(calendar) > 0,
+        "hevy_connected": len(muscle_fatigue) > 0,
     }
 
 
@@ -341,6 +408,11 @@ def format_prediction(result: dict) -> str:
     if c.get("fitness") is not None:
         sign = "fresh" if c["freshness"] >= 0 else "fatigued"
         lines.append(f"Fitness: {c['fitness']} | Fatigue: {c['fatigue']} | Freshness: {c['freshness']:+.1f} ({sign})")
+
+    if result.get("hevy_connected"):
+        lines.append("\nMuscle-group fatigue (from Hevy):")
+        for muscle, info in sorted(c["muscle_fatigue"].items(), key=lambda kv: -kv[1]["fatigue_score"]):
+            lines.append(f"  {muscle.replace('_', ' ')}: {info['state']} ({info['days_since_trained']}d ago)")
 
     lines.append(f"\nForecast ({'with' if result['calendar_connected'] else 'without'} calendar data):")
     lines.append("=" * 40)

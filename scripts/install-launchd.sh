@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Generates and loads launchd agents so whoop-core, calendar-intel,
-# recovery-forecast, alerts, and base-menubar start on login and restart
-# if they crash. Paths are derived from this script's location and $HOME,
-# so it works for any user/clone location — not just the original machine.
+# hevy-intel, recovery-forecast, alerts, and base-menubar start on login and
+# restart if they crash. Paths are derived from this script's location and
+# $HOME, so it works for any user/clone location — not just the original
+# machine.
 #
-# Run setup.sh and authenticate whoop-core + calendar-intel first.
+# Run setup.sh and authenticate whoop-core + calendar-intel first. hevy-intel
+# is optional (requires Hevy Pro) — it starts either way and just logs that
+# HEVY_API_KEY isn't set if you haven't configured it.
 # lights-bridge is intentionally NOT included — it needs a light method
 # configured (Shortcut/Hue/Home Assistant/Tuya) before it's safe to run
 # unattended nightly. Start it manually with `lights-bridge run` once
@@ -74,6 +77,10 @@ write_agent whoop-core \
 write_agent calendar-intel \
     "$REPO_DIR/calendar-intel" \
     "$REPO_DIR/calendar-intel/.venv/bin/calendar-intel" serve
+
+write_agent hevy-intel \
+    "$REPO_DIR/hevy-intel" \
+    "$REPO_DIR/hevy-intel/.venv/bin/hevy-intel" serve
 
 write_agent recovery-forecast \
     "$REPO_DIR/recovery-forecast" \

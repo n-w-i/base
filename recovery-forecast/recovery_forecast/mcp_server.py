@@ -11,7 +11,8 @@ def predict_my_recovery(days: int = 3) -> str:
     and upcoming calendar events. Use when the user asks about their recovery
     forecast, whether they should train hard, or how their week will go
     physically. Requires whoop-core to be running on :9120. Calendar-intel
-    on :9121 is optional but adds calendar-aware predictions."""
+    on :9121 and hevy-intel on :9123 are both optional but add calendar-aware
+    and muscle-group-fatigue-aware predictions respectively."""
     result = build_prediction(days)
     return format_prediction(result)
 

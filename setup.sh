@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_MODULES=(whoop-core calendar-intel recovery-forecast alerts lights-bridge)
+PY_MODULES=(whoop-core calendar-intel hevy-intel recovery-forecast alerts lights-bridge)
 
 echo "Setting up Base at $REPO_DIR"
 echo
@@ -46,6 +46,12 @@ if [ ! -f "$HOME/.base/google_credentials.json" ]; then
     echo "      See calendar-intel/README.md 'Setup' section."
 else
     echo "  [x] ~/.base/google_credentials.json already exists"
+fi
+if [ -f "$HOME/.base/.env" ] && grep -q "^HEVY_API_KEY=" "$HOME/.base/.env"; then
+    echo "  [x] HEVY_API_KEY already set in ~/.base/.env"
+else
+    echo "  [ ] (Optional) Add HEVY_API_KEY to ~/.base/.env for muscle-group-fatigue data"
+    echo "      Requires Hevy Pro — see hevy-intel/README.md 'Setup' section."
 fi
 echo
 echo "Then authenticate each service once:"

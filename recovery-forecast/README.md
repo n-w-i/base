@@ -22,12 +22,15 @@ Three ingredients, recalculated for each day and chained forward (today's guess 
 
 3. **Estimated sleep quality** — a guess at how well you'll sleep, based only on what's on your calendar that day (travel and late nights lower it). It has no idea what you'll actually do or how you'll actually sleep.
 
+4. **Muscle-group fatigue (optional, from hevy-intel)** — if you log strength training in Hevy, hevy-intel computes real per-muscle fatigue from your actual sets/reps/RPE and cross-references it against calendar-guessed workout days. If calendar-intel spots "leg day" tomorrow and your quads are still fatigued from a heavy squat session two days ago, the forecast's summary says so by name — something calendar keyword-matching alone could never know.
+
 **The honest caveats**: predictions compound — if day 1's guess is off, day 2 and 3 inherit that error, and nothing corrects it until you actually live through the day and WHOOP scores it for real. And because fitness/fatigue need real history to mean much, this forecast is more trustworthy the longer whoop-core has been syncing for you (a few days in, it's still finding its footing).
 
 ## Dependencies
 
 - **whoop-core** (required) — must be running on `:9120` for WHOOP data
 - **calendar-intel** (optional) — if running on `:9121`, predictions include calendar context. Without it, predictions are WHOOP-only.
+- **hevy-intel** (optional) — if running on `:9123`, predictions cross-reference calendar-guessed workout days against real per-muscle-group fatigue from logged Hevy sessions.
 
 ## Setup
 
@@ -60,26 +63,37 @@ Current HRV: 99.8ms
 Current strain: 9.3 (14-day avg: 8.5)
 Fitness: 6.9 | Fatigue: 8.0 | Freshness: -1.2 (fatigued)
 
+Muscle-group fatigue (from Hevy):
+  quadriceps: fatigued (1.0d ago)
+  chest: fresh (5.0d ago)
+
 Forecast (with calendar data):
 ========================================
 
 Sunday (2026-09-06)
   🟢 Predicted recovery: 80.7% (green)
   🔥 Predicted strain: 12.5 / 21
-    Gym (high strain) → -15 recovery
-  Calendar impact: -15
+  Leg day tomorrow is the main thing pulling recovery down today. Plenty of planned activity will add real strain today. Real training data: quadriceps is still fatigued (1.0d since last trained) — consider easing off.
+    Leg day tomorrow (high strain) → -15 recovery
   Freshness: -1.2 (fitness 6.9 − fatigue 8.0)
   Estimated sleep quality: 100%
+  Recovery math: 89.0 (base) -15 (calendar) -2.3 (freshness) +9.0 (sleep) = 80.7%
+  Strain math: 9.3 (base) +3.6 (planned activity) -0.4 (reverts toward fatigue) = 12.5
 
 Monday (2026-09-07)
   🟢 Predicted recovery: 86.4% (green)
   🔥 Predicted strain: 11.3 / 21
+  Nothing on the calendar should disrupt sleep tonight. Should be a lighter strain day than usual.
   Freshness: -1.7 (fitness 7.0 − fatigue 8.7)
   Estimated sleep quality: 100%
+  Recovery math: 80.7 (base) +0 (calendar) -3.3 (freshness) +9.0 (sleep) = 86.4%
+  Strain math: 12.5 (base) +0.0 (planned activity) -1.2 (reverts toward fatigue) = 11.3
 
 ========================================
 ✅ Looking good across the forecast — train as planned.
 ```
+
+The "Real training data" sentence and the muscle-group fatigue block only appear when hevy-intel is running and has synced data; without it, everything else works the same.
 
 ## Local API
 

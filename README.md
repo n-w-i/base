@@ -23,6 +23,7 @@ Each module runs independently or together:
 |--------|-------------|--------|
 | [whoop-core](./whoop-core/) | OAuth, data sync, local REST API | ✅ Built |
 | [calendar-intel](./calendar-intel/) | Reads Google Calendar, classifies events, forecasts | ✅ Built |
+| [hevy-intel](./hevy-intel/) | Syncs Hevy workouts, derives per-muscle-group fatigue (optional, needs Hevy Pro) | ✅ Built |
 | [recovery-forecast](./recovery-forecast/) | Multi-day recovery prediction model | ✅ Built |
 | [base-menubar](./base-menubar/) | macOS menu bar widget (Swift) | ✅ Built |
 | [alerts](./alerts/) | Proactive macOS notifications (recovery, risky days, bedtime) | ✅ Built |
@@ -48,24 +49,24 @@ cd calendar-intel && .venv/bin/calendar-intel auth  && cd ..
 ./scripts/install-launchd.sh
 ```
 
-That covers whoop-core, calendar-intel, recovery-forecast, alerts, and base-menubar. `lights-bridge` is left out of auto-start deliberately — it needs a light-control method (Shortcuts/Hue/Home Assistant/Tuya) configured first; see [lights-bridge/README.md](./lights-bridge/).
+That covers whoop-core, calendar-intel, hevy-intel, recovery-forecast, alerts, and base-menubar. `lights-bridge` is left out of auto-start deliberately — it needs a light-control method (Shortcuts/Hue/Home Assistant/Tuya) configured first; see [lights-bridge/README.md](./lights-bridge/). hevy-intel is optional and needs Hevy Pro — see [hevy-intel/README.md](./hevy-intel/) — the rest of Base works fine without it.
 
 Check on things any time with `launchctl list | grep com.base`; logs land in `~/.base/logs/`.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐
-│  Google Calendar │     │    WHOOP API     │
-└────────┬────────┘     └────────┬─────────┘
-         │                       │
-         ▼                       ▼
-┌─────────────────┐     ┌──────────────────┐
-│  calendar-intel │     │   whoop-core     │
-│   :9121         │     │   :9120          │
-└────────┬────────┘     └────────┬─────────┘
-         │                       │
-         └───────────┬───────────┘
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  Google Calendar │     │    WHOOP API     │     │   Hevy API   │
+└────────┬────────┘     └────────┬─────────┘     └──────┬───────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  calendar-intel │     │   whoop-core     │     │  hevy-intel  │
+│   :9121         │     │   :9120          │     │   :9123      │
+└────────┬────────┘     └────────┬─────────┘     └──────┬───────┘
+         │                       │                       │
+         └───────────┬───────────┴───────────────────────┘
                      ▼
           ┌─────────────────────┐
           │  recovery-forecast  │
@@ -78,6 +79,8 @@ Check on things any time with `launchctl list | grep com.base`; logs land in `~/
 │ base-menubar │ │ alerts │ │ lights-bridge│
 └──────────────┘ └────────┘ └──────────────┘
 ```
+
+hevy-intel is optional — everything upstream and downstream of it works fine without a Hevy Pro subscription.
 
 ## Privacy & security
 
